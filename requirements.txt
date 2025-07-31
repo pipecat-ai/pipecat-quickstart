@@ -1,1 +1,1 @@
-pipecat-ai[webrtc,silero,deepgram,openai,cartesia,runner]
+pipecat-ai[webrtc,silero,speechmatics,openai,cartesia,runner]

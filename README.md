@@ -18,7 +18,7 @@ If you need to upgrade Python, we recommend using a version manager like `uv` or
 
 Pipecat orchestrates different AI services in a pipeline, ensuring low latency communication. In this quickstart example, we'll use:
 
-- [Deepgram](https://console.deepgram.com/signup) for Speech-to-Text transcriptions
+- [Speechmatics](https://portal.speechmatics.com/signup) for Speech-to-Text transcriptions
 - [OpenAI](https://auth.openai.com/create-account) for LLM inference
 - [Cartesia](https://play.cartesia.ai/sign-up) for Text-to-Speech audio generation
 
@@ -63,7 +63,7 @@ cp env.example .env
 Then, add your API keys:
 
 ```
-DEEPGRAM_API_KEY=your_deepgram_api_key
+SPEECHMATICS_API_KEY=your_speechmatics_api_key
 OPENAI_API_KEY=your_openai_api_key
 CARTESIA_API_KEY=your_cartesia_api_key
 ```

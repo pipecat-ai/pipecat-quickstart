@@ -10,7 +10,7 @@ The example runs a simple voice AI bot that you can connect to using your
 browser and speak with it.
 
 Required AI services:
-- Deepgram (Speech-to-Text)
+- Speechmatics (Speech-to-Text)
 - OpenAI (LLM)
 - Cartesia (Text-to-Speech)
 
@@ -25,7 +25,6 @@ import os
 
 from dotenv import load_dotenv
 from loguru import logger
-
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -34,8 +33,8 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.runner.types import RunnerArguments
 from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.speechmatics.stt import SpeechmaticsSTTService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
@@ -45,7 +44,7 @@ load_dotenv(override=True)
 async def run_bot(transport: BaseTransport):
     logger.info(f"Starting bot")
 
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+    stt = SpeechmaticsSTTService(api_key=os.getenv("SPEECHMATICS_API_KEY"))
 
     tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),
@@ -92,7 +91,9 @@ async def run_bot(transport: BaseTransport):
     async def on_client_connected(transport, client):
         logger.info(f"Client connected")
         # Kick off the conversation.
-        messages.append({"role": "system", "content": "Say hello and briefly introduce yourself."})
+        messages.append(
+            {"role": "system", "content": "Say hello and briefly introduce yourself."}
+        )
         await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @transport.event_handler("on_client_disconnected")
