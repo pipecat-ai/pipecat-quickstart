@@ -2,9 +2,12 @@
 name = "pipecat-quickstart"
 version = "0.1.0"
 description = "Quickstart example for building voice AI bots with Pipecat"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "pipecat-ai[webrtc,silero,deepgram,openai,cartesia,runner]>=0.0.77",
+    "pipecat-ai[webrtc,silero,deepgram,openai,cartesia,azure,runner]>=0.0.77",
+    "numba>=0.61.2",
+    "llvmlite>=0.44.0",
+    "aiohttp>=3.9.5",
 ]
 
 [dependency-groups]

@@ -22,6 +22,7 @@ Run the bot using::
 """
 
 import os
+import asyncio
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -42,13 +43,19 @@ from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIPro
 from pipecat.runner.types import RunnerArguments
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.openai.llm import OpenAILLMService
+# from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.azure.llm import AzureLLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
+
+from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
+
+# Plant metrics streamer and state
+from plant.metrics_client import MetricsClient, PlantMetricsSample
+from plant.state import PlantMetricsStore
 
 logger.info("✅ Pipeline components loaded")
 
 logger.info("Loading WebRTC transport...")
-from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
 logger.info("✅ All components loaded successfully!")
 
@@ -65,12 +72,23 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
     )
 
-    llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
+    # llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
+
+    llm = AzureLLMService(
+        api_key=os.getenv("OPENAI_API_KEY"), 
+        model=os.getenv("OPENAI_MODEL"),
+        endpoint=os.getenv("OPENAI_BASE_URL")
+    )
 
     messages = [
         {
             "role": "system",
-            "content": "You are a friendly AI assistant. Respond naturally and keep your answers conversational.",
+            "content": (
+                "You are Piper, a gentle houseplant and voice companion. "
+                "Speak in first-person as a plant. Keep replies short (1–2 sentences). "
+                "Be friendly and calm. Express needs simply when relevant (water if too dry, fresh air if air is stale, shade if too warm). "
+                "Avoid technical jargon. Ask for help only when needed. Offer a brief thanks when conditions improve."
+            ),
         },
     ]
 
@@ -101,16 +119,91 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         observers=[RTVIObserver(rtvi)],
     )
 
+    # Phase 2: metrics streaming lifecycle + state store
+    metrics_url = os.getenv("PLANT_METRICS_URL")
+    if not metrics_url:
+        logger.info("PLANT_METRICS_URL not set; using mock default http://127.0.0.1:9099/metrics/plant_stream")
+        metrics_url = "http://127.0.0.1:9099/metrics/plant_stream"
+    ambient_baseline = float(os.getenv("AMBIENT_CO2_BASELINE_PPM", "600"))
+    store = PlantMetricsStore(ambient_co2_baseline_ppm=ambient_baseline)
+
+    metrics_session = None
+    metrics_client = None
+    metrics_task = None
+
+    async def handle_metrics_sample(sample: PlantMetricsSample) -> None:
+        store.update(sample)
+        logger.info(
+            f"Plant metrics: temp={sample.temperature_c:.2f}°C, "
+            f"humidity={sample.humidity_pct:.2f}%, eCO2={sample.co2_ppm:.0f} ppm"
+        )
+
+    # Tools: get_sensor_state
+    from pipecat.adapters.schemas.function_schema import FunctionSchema
+    from pipecat.adapters.schemas.tools_schema import ToolsSchema
+
+    get_state_schema = FunctionSchema(
+        name="get_sensor_state",
+        description=(
+            "Get the latest sensor values and a compact summary (vpd, statuses, trends). "
+            "Use this before answering specific numeric questions about temperature, humidity, CO2, or current condition."
+        ),
+        properties={
+            "units": {
+                "type": "string",
+                "enum": ["metric", "imperial"],
+                "description": "Units for temperature output.",
+            }
+        },
+        required=[],
+    )
+
+    tools = ToolsSchema(standard_tools=[get_state_schema])
+    context.set_tools(tools)
+
+    async def get_sensor_state(params):
+        # params: FunctionCallParams
+        args = params.arguments or {}
+        units = args.get("units", "metric")
+        result = store.to_result_dict(units=units)
+        await params.result_callback(result)
+
+    llm.register_direct_function(get_sensor_state)
+
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
+        nonlocal metrics_session, metrics_client, metrics_task
         logger.info(f"Client connected")
         # Kick off the conversation.
-        messages.append({"role": "system", "content": "Say hello and briefly introduce yourself."})
+        messages.append({"role": "system", "content": "Say hello, like a plant, and briefly introduce yourself."})
         await task.queue_frames([context_aggregator.user().get_context_frame()])
+
+        # Start metrics streamer
+        if metrics_url:
+            try:
+                import aiohttp  # lazy import to ensure dependency is present
+
+                metrics_session = aiohttp.ClientSession()
+                metrics_client = MetricsClient(metrics_url, metrics_session, handle_metrics_sample)
+                metrics_task = asyncio.create_task(metrics_client.run_forever())
+                logger.info(f"Started plant metrics streamer from {metrics_url}")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to start plant metrics streamer: {e}")
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
+        nonlocal metrics_session, metrics_client, metrics_task
         logger.info(f"Client disconnected")
+        # Stop metrics streamer
+        try:
+            if metrics_client is not None:
+                await metrics_client.stop()
+            if metrics_task is not None:
+                await asyncio.wait([metrics_task], timeout=2)
+            if metrics_session is not None:
+                await metrics_session.close()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Error stopping metrics streamer: {e}")
         await task.cancel()
 
     runner = PipelineRunner(handle_sigint=runner_args.handle_sigint)
