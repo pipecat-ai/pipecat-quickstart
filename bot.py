@@ -10,9 +10,9 @@ The example runs a simple voice AI bot that you can connect to using your
 browser and speak with it. You can also deploy this bot to Pipecat Cloud.
 
 Required AI services:
-- Deepgram (Speech-to-Text)
+- Moonshine (Local Speech-to-Text)
 - OpenAI (LLM)
-- Cartesia (Text-to-Speech)
+- Kokoro (Local Text-to-Speech)
 
 Run the bot using::
 
@@ -20,9 +20,11 @@ Run the bot using::
 """
 
 import os
+from typing import List
 
 from dotenv import load_dotenv
 from loguru import logger
+from openai.types.chat import ChatCompletionMessageParam
 from pipecat.frames.frames import LLMRunFrame
 
 print("🚀 Starting Pipecat bot...")
@@ -40,8 +42,9 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
-from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.kokoro.tts import KokoroTTSService
+from pipecat.services.moonshine.stt import MoonshineSTTService
+from pipecat.transcriptions.language import Language
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams
@@ -54,16 +57,25 @@ load_dotenv(override=True)
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     logger.info(f"Starting bot")
 
-    stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+    vad_analyzer = SileroVADAnalyzer()
 
-    tts = CartesiaTTSService(
-        api_key=os.getenv("CARTESIA_API_KEY"),
-        voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
+    stt = MoonshineSTTService(
+        model_name="moonshine/tiny",
+        language=Language.EN,
+        vad_enabled=True,
+        vad_analyzer=vad_analyzer,
+    )
+
+    # Local Kokoro TTS (no API key required)  
+    tts = KokoroTTSService(
+        model_path="assets/kokoro-v1.0.onnx",
+        voices_path="assets/voices-v1.0.bin",
+        voice_id="af_sarah",
     )
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
 
-    messages = [
+    messages: List[ChatCompletionMessageParam] = [
         {
             "role": "system",
             "content": "You are a friendly AI assistant. Respond naturally and keep your answers conversational.",

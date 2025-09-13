@@ -201,3 +201,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Large AI model files (use download_models.sh to get them)
+assets/*.onnx
+assets/*.bin
+assets/*.pt
+assets/*.safetensors
+
+# Backup files created by copy script
+assets.backup/
+*.backup/
+
+# Keep the assets directory structure but ignore large files
+!assets/.gitkeep
