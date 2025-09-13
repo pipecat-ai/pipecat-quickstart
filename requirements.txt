@@ -1,0 +1,7 @@
+kokoro-onnx>=0.4.9
+onnxruntime>=1.22.1
+pipecat-ai[cartesia,daily,deepgram,moonshine,openai,runner,silero,webrtc]>=0.0.83
+pipecatcloud>=0.2.4
+useful-moonshine @ git+https://github.com/usefulsensors/moonshine.git
+python-dotenv
+loguru
