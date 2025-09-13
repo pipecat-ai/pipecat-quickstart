@@ -20,9 +20,11 @@ Run the bot using::
 """
 
 import os
+from typing import List
 
 from dotenv import load_dotenv
 from loguru import logger
+from openai.types.chat import ChatCompletionMessageParam
 from pipecat.frames.frames import LLMRunFrame
 
 print("🚀 Starting Pipecat bot...")
@@ -73,7 +75,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
 
-    messages = [
+    messages: List[ChatCompletionMessageParam] = [
         {
             "role": "system",
             "content": "You are a friendly AI assistant. Respond naturally and keep your answers conversational.",
