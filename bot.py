@@ -216,7 +216,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v1"
+BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v2"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -541,7 +541,7 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
             model=model_id,
             streaming=True,                  # uses /tts/v1/voice:stream
             encoding="LINEAR16",
-            sample_rate=None,
+            sample_rate=48000,
             params=params, 
         )
 
