@@ -219,7 +219,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v3"
+BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v4"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -1005,23 +1005,11 @@ You are simulating a real patient in a clinical consultation.
 
     context = LLMContext(messages)
 
-    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
-        context,
-        user_params=LLMUserAggregatorParams(
-            user_turn_strategies=UserTurnStrategies(
-                stop=(
-                    [TranscriptionUserTurnStopStrategy()]
-                    if stt_provider_in_use in ("assemblyai", "aai")
-                    else [
-                        TurnAnalyzerUserTurnStopStrategy(
-                            turn_analyzer=LocalSmartTurnAnalyzerV3(
-                                params=SmartTurnParams(stop_secs=1.0)
-                            )
-                        )
-                    ]
-                )
-            ),
-            user_turn_stop_timeout=1.0,
+    if stt_provider_in_use in ("assemblyai", "aai"):
+        # Match AssemblyAI example behavior:
+        # - do NOT override user_turn_strategies (use Pipecat defaults)
+        # - keep VAD for interruptions/turn start
+        user_params = LLMUserAggregatorParams(
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
                     # ✅ reduce false “user started speaking” interruptions
@@ -1035,7 +1023,38 @@ You are simulating a real patient in a clinical consultation.
                     vad_audio_passthrough=True,
                 )
             ),
-        ),
+        )
+    else:
+        # For Deepgram (and any non-AssemblyAI STT):
+        # - keep your Smart Turn Analyzer stop strategy
+        user_params = LLMUserAggregatorParams(
+            user_turn_strategies=UserTurnStrategies(
+                stop=[
+                    TurnAnalyzerUserTurnStopStrategy(
+                        turn_analyzer=LocalSmartTurnAnalyzerV3(
+                            params=SmartTurnParams(stop_secs=1.0)
+                        )
+                    )
+                ]
+            ),
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    # ✅ reduce false “user started speaking” interruptions
+                    start_secs=0.35,
+                    confidence=0.8,
+                    min_volume=0.65,
+
+                    # ✅ slightly less twitchy end-of-speech
+                    stop_secs=0.25,
+
+                    vad_audio_passthrough=True,
+                )
+            ),
+        )
+
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+        context,
+        user_params=user_params,
     )
 
     pipeline = Pipeline(
