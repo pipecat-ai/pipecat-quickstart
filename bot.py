@@ -61,9 +61,6 @@ from pipecat.audio.filters.krisp_viva_filter import KrispVivaFilter
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
-from pipecat.turns.user_stop.transcription_user_turn_stop_strategy import (
-    TranscriptionUserTurnStopStrategy,
-)
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 class SafeInworldHttpTTSService(InworldHttpTTSService):
@@ -219,7 +216,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v4"
+BOT_VERSION = "2026-02-20-newrules-v2"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -685,19 +682,12 @@ def _build_stt_service(provider: str):
 
         return AssemblyAISTTService(
             api_key=api_key,
-
-            # ✅ IMPORTANT: let AssemblyAI decide end-of-turn (do NOT force endpoints from VAD)
-            vad_force_turn_endpoint=False,
-
             connection_params=AssemblyAIConnectionParams(
                 sample_rate=16000,
                 formatted_finals=True,
-
-                # ✅ Turn detection tuning (good clinical-consult defaults)
-                end_of_turn_confidence_threshold=0.5,
-                min_end_of_turn_silence_when_confident=250,  # ms
-                max_turn_silence=800,                       # ms
             ),
+            # Keep your existing SmartTurn + Silero VAD as the turn controller:
+            vad_force_turn_endpoint=True,
         )
 
     raise RuntimeError(f"Unknown STT provider: {provider!r}")
@@ -1005,29 +995,9 @@ You are simulating a real patient in a clinical consultation.
 
     context = LLMContext(messages)
 
-    if stt_provider_in_use in ("assemblyai", "aai"):
-        # Match AssemblyAI example behavior:
-        # - do NOT override user_turn_strategies (use Pipecat defaults)
-        # - keep VAD for interruptions/turn start
-        user_params = LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(
-                params=VADParams(
-                    # ✅ reduce false “user started speaking” interruptions
-                    start_secs=0.35,
-                    confidence=0.8,
-                    min_volume=0.65,
-
-                    # ✅ slightly less twitchy end-of-speech
-                    stop_secs=0.25,
-
-                    vad_audio_passthrough=True,
-                )
-            ),
-        )
-    else:
-        # For Deepgram (and any non-AssemblyAI STT):
-        # - keep your Smart Turn Analyzer stop strategy
-        user_params = LLMUserAggregatorParams(
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(
             user_turn_strategies=UserTurnStrategies(
                 stop=[
                     TurnAnalyzerUserTurnStopStrategy(
@@ -1039,22 +1009,11 @@ You are simulating a real patient in a clinical consultation.
             ),
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
-                    # ✅ reduce false “user started speaking” interruptions
-                    start_secs=0.35,
-                    confidence=0.8,
-                    min_volume=0.65,
-
-                    # ✅ slightly less twitchy end-of-speech
-                    stop_secs=0.25,
-
+                    stop_secs=0.2,
                     vad_audio_passthrough=True,
                 )
             ),
-        )
-
-    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
-        context,
-        user_params=user_params,
+        ),
     )
 
     pipeline = Pipeline(
