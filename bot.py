@@ -61,6 +61,9 @@ from pipecat.audio.filters.krisp_viva_filter import KrispVivaFilter
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
+from pipecat.turns.user_stop.transcription_user_turn_stop_strategy import (
+    TranscriptionUserTurnStopStrategy,
+)
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 class SafeInworldHttpTTSService(InworldHttpTTSService):
@@ -216,7 +219,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v2"
+BOT_VERSION = "2026-02-25-Assemblyai-turndetection-v3"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -1007,7 +1010,7 @@ You are simulating a real patient in a clinical consultation.
         user_params=LLMUserAggregatorParams(
             user_turn_strategies=UserTurnStrategies(
                 stop=(
-                    []
+                    [TranscriptionUserTurnStopStrategy()]
                     if stt_provider_in_use in ("assemblyai", "aai")
                     else [
                         TurnAnalyzerUserTurnStopStrategy(
@@ -1018,6 +1021,7 @@ You are simulating a real patient in a clinical consultation.
                     ]
                 )
             ),
+            user_turn_stop_timeout=1.0,
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
                     # ✅ reduce false “user started speaking” interruptions
