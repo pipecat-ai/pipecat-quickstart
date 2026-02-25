@@ -691,9 +691,9 @@ def _build_stt_service(provider: str):
                 formatted_finals=True,
 
                 # ✅ Turn detection tuning (good clinical-consult defaults)
-                end_of_turn_confidence_threshold=0.55,
-                min_end_of_turn_silence_when_confident=500,  # ms
-                max_turn_silence=1800,                       # ms
+                end_of_turn_confidence_threshold=0.5,
+                min_end_of_turn_silence_when_confident=250,  # ms
+                max_turn_silence=800,                       # ms
             ),
         )
 
