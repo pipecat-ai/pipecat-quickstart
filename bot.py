@@ -487,7 +487,6 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
             api_key=api_key,
             voice_id=voice_id,
             model=model_id,
-            sample_rate=48000,  # ✅ match WebRTC output rate to avoid resample stutter
             # Turn on internal service logging (supported by Pipecat)
             params=ElevenLabsTTSService.InputParams(enable_logging=True),
         )
