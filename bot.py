@@ -216,7 +216,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-20-vad-off"
+BOT_VERSION = "2026-02-20-newrules-v2"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -683,10 +683,10 @@ def _build_stt_service(provider: str):
             api_key=api_key,
             connection_params=AssemblyAIConnectionParams(
                 sample_rate=16000,
-                formatted_finals=False,
+                formatted_finals=True,
             ),
             # Keep your existing SmartTurn + Silero VAD as the turn controller:
-            vad_force_turn_endpoint=False,
+            vad_force_turn_endpoint=True,
         )
 
     raise RuntimeError(f"Unknown STT provider: {provider!r}")
@@ -1160,7 +1160,7 @@ async def bot(runner_args: RunnerArguments):
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
                     start_secs=0.35,
-                    stop_secs=0.2,
+                    stop_secs=0.3,
                     confidence=0.8,
                     min_volume=0.65,
                     vad_audio_passthrough=True,
@@ -1174,7 +1174,7 @@ async def bot(runner_args: RunnerArguments):
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
                     start_secs=0.35,
-                    stop_secs=0.2,
+                    stop_secs=0.3,
                     confidence=0.8,
                     min_volume=0.65,
                     vad_audio_passthrough=True,
