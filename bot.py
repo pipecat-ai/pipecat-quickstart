@@ -216,7 +216,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-20-newrules-v2"
+BOT_VERSION = "2026-02-20-vad-off"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -687,7 +687,7 @@ def _build_stt_service(provider: str):
                 formatted_finals=True,
             ),
             # Keep your existing SmartTurn + Silero VAD as the turn controller:
-            vad_force_turn_endpoint=True,
+            vad_force_turn_endpoint=False,
         )
 
     raise RuntimeError(f"Unknown STT provider: {provider!r}")
