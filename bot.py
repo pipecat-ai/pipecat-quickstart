@@ -684,7 +684,7 @@ def _build_stt_service(provider: str):
             api_key=api_key,
             connection_params=AssemblyAIConnectionParams(
                 sample_rate=16000,
-                formatted_finals=True,
+                formatted_finals=False,
             ),
             # Keep your existing SmartTurn + Silero VAD as the turn controller:
             vad_force_turn_endpoint=False,
