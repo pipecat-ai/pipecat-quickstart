@@ -1007,12 +1007,6 @@ You are simulating a real patient in a clinical consultation.
                     )
                 ]
             ),
-            vad_analyzer=SileroVADAnalyzer(
-                params=VADParams(
-                    stop_secs=0.2,
-                    vad_audio_passthrough=True,
-                )
-            ),
         ),
     )
 
@@ -1163,10 +1157,30 @@ async def bot(runner_args: RunnerArguments):
             audio_in_enabled=True,
             audio_in_filter=KrispVivaFilter(),  # ✅ Krisp VIVA mic filter
             audio_out_enabled=True,
+            # ✅ VAD MUST be upstream so AssemblyAI STT can receive UserStoppedSpeakingFrame
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    start_secs=0.35,
+                    stop_secs=0.2,
+                    confidence=0.8,
+                    min_volume=0.65,
+                    vad_audio_passthrough=True,
+                )
+            ),
         ),
         "webrtc": lambda: TransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
+            # ✅ same for WebRTC transport
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    start_secs=0.35,
+                    stop_secs=0.2,
+                    confidence=0.8,
+                    min_volume=0.65,
+                    vad_audio_passthrough=True,
+                )
+            ),
         ),
     }
     transport = await create_transport(runner_args, transport_params)
