@@ -62,6 +62,7 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
+from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
 
 class SafeInworldHttpTTSService(InworldHttpTTSService):
     """
@@ -998,6 +999,9 @@ You are simulating a real patient in a clinical consultation.
         context,
         user_params=LLMUserAggregatorParams(
             user_turn_strategies=UserTurnStrategies(
+                start=[
+                    MinWordsUserTurnStartStrategy(min_words=2),
+                ],                
                 stop=[
                     TurnAnalyzerUserTurnStopStrategy(
                         turn_analyzer=LocalSmartTurnAnalyzerV3(
