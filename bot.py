@@ -51,6 +51,7 @@ from pipecat.services.inworld.tts import InworldHttpTTSService
 from pipecat.transcriptions.language import Language as TranscriptLanguage
 
 from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.deepgram.flux.stt import DeepgramFluxSTTService
 from pipecat.services.assemblyai.stt import AssemblyAISTTService
 from pipecat.services.assemblyai.models import AssemblyAIConnectionParams
 from pipecat.services.openai.llm import OpenAILLMService
@@ -61,7 +62,7 @@ from pipecat.audio.filters.krisp_viva_filter import KrispVivaFilter
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
-from pipecat.turns.user_turn_strategies import UserTurnStrategies
+from pipecat.turns.user_turn_strategies import UserTurnStrategies, ExternalUserTurnStrategies
 from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
 
 class SafeInworldHttpTTSService(InworldHttpTTSService):
@@ -217,7 +218,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-20-newrules-v2"
+BOT_VERSION = "2026-02-26-flux-v1"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -673,7 +674,36 @@ def _build_stt_service(provider: str):
         api_key = (os.getenv("DEEPGRAM_API_KEY") or "").strip()
         if not api_key:
             raise RuntimeError("Missing DEEPGRAM_API_KEY (STT provider=deepgram)")
-        return DeepgramSTTService(api_key=api_key)
+
+        def _f(name: str, default=None):
+            raw = (os.getenv(name) or "").strip()
+            if not raw:
+                return default
+            try:
+                return float(raw)
+            except Exception:
+                return default
+
+        def _i(name: str, default=None):
+            raw = (os.getenv(name) or "").strip()
+            if not raw:
+                return default
+            try:
+                return int(raw)
+            except Exception:
+                return default
+
+        flux_params = DeepgramFluxSTTService.InputParams(
+            min_confidence=_f("DG_FLUX_MIN_CONFIDENCE", 0.3),
+            eot_threshold=_f("DG_FLUX_EOT_THRESHOLD", None),
+            eager_eot_threshold=_f("DG_FLUX_EAGER_EOT_THRESHOLD", None),
+            eot_timeout_ms=_i("DG_FLUX_EOT_TIMEOUT_MS", None),
+        )
+
+        return DeepgramFluxSTTService(
+            api_key=api_key,
+            params=flux_params,
+        )
 
     if provider in ("assemblyai", "aai"):
         api_key = (os.getenv("ASSEMBLYAI_API_KEY") or "").strip()
@@ -747,6 +777,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     )
 
     stt, stt_provider_in_use, stt_other = choose_stt_primary_first()
+    use_flux_turns = stt_provider_in_use in ("deepgram", "dg")
     logger.info(f"🎙️ STT selected: {stt_provider_in_use} (secondary={stt_other or 'none'})")
 
     # Ensure Google credentials exist before any Google client init
@@ -995,21 +1026,26 @@ You are simulating a real patient in a clinical consultation.
 
     context = LLMContext(messages)
 
+    if use_flux_turns:
+        user_turn_strategies = ExternalUserTurnStrategies()
+    else:
+        user_turn_strategies = UserTurnStrategies(
+            start=[
+                MinWordsUserTurnStartStrategy(min_words=2),
+            ],
+            stop=[
+                TurnAnalyzerUserTurnStopStrategy(
+                    turn_analyzer=LocalSmartTurnAnalyzerV3(
+                        params=SmartTurnParams(stop_secs=1.0)
+                    )
+                )
+            ],
+        )
+
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
-            user_turn_strategies=UserTurnStrategies(
-                start=[
-                    MinWordsUserTurnStartStrategy(min_words=2),
-                ],                
-                stop=[
-                    TurnAnalyzerUserTurnStopStrategy(
-                        turn_analyzer=LocalSmartTurnAnalyzerV3(
-                            params=SmartTurnParams(stop_secs=1.0)
-                        )
-                    )
-                ]
-            ),
+            user_turn_strategies=user_turn_strategies,
         ),
     )
 
@@ -1155,37 +1191,42 @@ You are simulating a real patient in a clinical consultation.
 
 
 async def bot(runner_args: RunnerArguments):
+    def _peek_provider_from_env() -> str:
+        forced = (os.getenv("STT_FORCE_PROVIDER") or "").strip().lower()
+        if forced:
+            return forced
+        return (os.getenv("STT_PRIMARY") or "deepgram").strip().lower()
+
+    primary_provider = _peek_provider_from_env()
+    use_flux = primary_provider in ("deepgram", "dg")
+
+    def _silero_vad():
+        return SileroVADAnalyzer(
+            params=VADParams(
+                start_secs=0.35,
+                stop_secs=0.3,
+                confidence=0.8,
+                min_volume=0.65,
+                vad_audio_passthrough=True,
+            )
+        )
+
     transport_params = {
         "daily": lambda: DailyParams(
             audio_in_enabled=True,
             audio_in_filter=KrispVivaFilter(),  # ✅ Krisp VIVA mic filter
             audio_out_enabled=True,
-            # ✅ VAD MUST be upstream so AssemblyAI STT can receive UserStoppedSpeakingFrame
-            vad_analyzer=SileroVADAnalyzer(
-                params=VADParams(
-                    start_secs=0.35,
-                    stop_secs=0.3,
-                    confidence=0.8,
-                    min_volume=0.65,
-                    vad_audio_passthrough=True,
-                )
-            ),
+            # ✅ Keep VAD for AssemblyAI, disable for Flux
+            vad_analyzer=None if use_flux else _silero_vad(),
         ),
         "webrtc": lambda: TransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            # ✅ same for WebRTC transport
-            vad_analyzer=SileroVADAnalyzer(
-                params=VADParams(
-                    start_secs=0.35,
-                    stop_secs=0.3,
-                    confidence=0.8,
-                    min_volume=0.65,
-                    vad_audio_passthrough=True,
-                )
-            ),
+            # ✅ Keep VAD for AssemblyAI, disable for Flux
+            vad_analyzer=None if use_flux else _silero_vad(),
         ),
     }
+
     transport = await create_transport(runner_args, transport_params)
     await run_bot(transport, runner_args)
 
