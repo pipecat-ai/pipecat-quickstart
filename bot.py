@@ -604,18 +604,31 @@ def _in_cooldown(provider: str) -> bool:
     return bool(until and until > _now())
 
 
-def _get_primary_secondary() -> tuple[str, str]:
+def _get_primary_secondary_for_mode(mode: str) -> tuple[str, str]:
     """
-    Env-driven selection.
-      STT_FORCE_PROVIDER (optional) overrides everything for testing.
-      STT_PRIMARY / STT_SECONDARY are the normal controls.
+    Mode-aware STT selection.
+
+    - STT_FORCE_PROVIDER overrides everything (for testing).
+    - Premium can have its own primary/secondary providers (env-driven).
+    - Standard uses your existing STT_PRIMARY / STT_SECONDARY by default.
+
+    Env vars supported:
+      STT_FORCE_PROVIDER
+      STT_PRIMARY, STT_SECONDARY
+      STT_PRIMARY_PREMIUM, STT_SECONDARY_PREMIUM
+      STT_PRIMARY_STANDARD, STT_SECONDARY_STANDARD   (optional)
     """
     forced = (os.getenv("STT_FORCE_PROVIDER") or "").strip().lower()
     if forced:
         return forced, ""
 
-    primary = (os.getenv("STT_PRIMARY") or "deepgram").strip().lower()
-    secondary = (os.getenv("STT_SECONDARY") or "assemblyai").strip().lower()
+    m = (mode or "").strip().lower()
+    if m == "premium":
+        primary = (os.getenv("STT_PRIMARY_PREMIUM") or "deepgram").strip().lower()
+        secondary = (os.getenv("STT_SECONDARY_PREMIUM") or os.getenv("STT_SECONDARY") or "assemblyai").strip().lower()
+    else:
+        primary = (os.getenv("STT_PRIMARY_STANDARD") or os.getenv("STT_PRIMARY") or "assemblyai").strip().lower()
+        secondary = (os.getenv("STT_SECONDARY_STANDARD") or os.getenv("STT_SECONDARY") or "deepgram").strip().lower()
 
     if secondary == primary:
         secondary = ""
@@ -723,12 +736,13 @@ def _build_stt_service(provider: str):
     raise RuntimeError(f"Unknown STT provider: {provider!r}")
 
 
-def choose_stt_primary_first() -> tuple[object, str, str]:
+def choose_stt_primary_first(mode: str) -> tuple[object, str, str]:
     """
     Returns: (stt_service, provider_in_use, other_provider)
     Uses cooldown to skip a provider that just rate-limited / errored.
+    Mode-aware so premium can default to Deepgram (Flux).
     """
-    primary, secondary = _get_primary_secondary()
+    primary, secondary = _get_primary_secondary_for_mode(mode)
 
     if primary and not _in_cooldown(primary):
         return _build_stt_service(primary), primary, secondary
@@ -776,7 +790,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         f"DEEPGRAM_API_KEY_set={bool((os.getenv('DEEPGRAM_API_KEY') or '').strip())}"
     )
 
-    stt, stt_provider_in_use, stt_other = choose_stt_primary_first()
+    stt, stt_provider_in_use, stt_other = choose_stt_primary_first(mode)
     use_flux_turns = stt_provider_in_use in ("deepgram", "dg")
     logger.info(f"🎙️ STT selected: {stt_provider_in_use} (secondary={stt_other or 'none'})")
 
@@ -1188,16 +1202,22 @@ You are simulating a real patient in a clinical consultation.
         await _close_aiohttp_session()
 
 
-
-
 async def bot(runner_args: RunnerArguments):
-    def _peek_provider_from_env() -> str:
-        forced = (os.getenv("STT_FORCE_PROVIDER") or "").strip().lower()
-        if forced:
-            return forced
-        return (os.getenv("STT_PRIMARY") or "deepgram").strip().lower()
+    body = getattr(runner_args, "body", None) or {}
 
-    primary_provider = _peek_provider_from_env()
+    def _normalize_mode(value):
+        v = str(value or "").strip().lower()
+        return "premium" if v == "premium" else "standard"
+
+    mode = _normalize_mode(
+        body.get("mode")
+        or body.get("botMode")
+        or (body.get("metadata") or {}).get("mode")
+        or (body.get("meta") or {}).get("mode")
+        or (body.get("context") or {}).get("mode")
+    )
+
+    primary_provider, _secondary_provider = _get_primary_secondary_for_mode(mode)
     use_flux = primary_provider in ("deepgram", "dg")
 
     def _silero_vad():
