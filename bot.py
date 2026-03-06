@@ -218,7 +218,7 @@ logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
-BOT_VERSION = "2026-02-26-flux-v1"
+BOT_VERSION = "2026-03-06-reworked-TTS"
 logger.info(f"✅ BOT_VERSION={BOT_VERSION}")
 
 # Where to submit transcript for grading (ONLY on disconnect)
@@ -431,6 +431,12 @@ def _submit_grading_in_background(url: str, payload: dict):
 
 
 # ----------------------- TTS SELECTION -----------------------
+TTS_SAMPLE_RATES = {
+    "cartesia":   24000,
+    "elevenlabs": 24000,
+    "google":     24000,
+    "inworld":    48000,
+}
 
 def _safe_lower(x):
     return str(x).strip().lower() if x is not None else ""
@@ -440,12 +446,17 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
     """
     Create the TTS service based on runner_args.body.tts
 
+    Returns: (tts_service, audio_out_sample_rate)
+
+    The caller MUST pass audio_out_sample_rate into PipelineParams so
+    the entire pipeline agrees on a single output rate.
+
     Expected shape:
       body.tts = {
         "provider": "cartesia" | "elevenlabs" | "google" | "inworld",
         "voice": "<voice_id_or_voice_name>",
         "model": "<optional>",
-        "config": { ...optional... }   # NOTE: not applied yet (avoid runtime crashes)
+        "config": { ...optional... }
       }
 
     Defaults to Cartesia if anything is missing.
@@ -462,7 +473,7 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
         return CartesiaTTSService(
             api_key=os.getenv("CARTESIA_API_KEY"),
             voice_id=voice or os.getenv("CARTESIA_VOICE_ID") or "71a7ad14-091c-4e8e-a314-022ece01c121",
-        )
+        ), TTS_SAMPLE_RATES["cartesia"]
 
     # ELEVENLABS
     if provider == "elevenlabs":
@@ -477,21 +488,19 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
                 "Set it in Airtable (tts.voice) or ELEVENLABS_VOICE_ID env var."
             )
 
-        model_id = model or os.getenv("ELEVENLABS_MODEL") or "eleven_turbo_v2_5"
+        model_id = model or os.getenv("ELEVENLABS_MODEL") or "eleven_flash_v2_5"
 
-        # IMPORTANT: force a playable format for Daily/WebRTC
-        # 48000 is the safest default for WebRTC pipelines.
         logger.info(
-            f"🔊 ElevenLabs TTS init: voice_id={voice_id!r}, model_id={model_id!r}, sample_rate=48000"
+            f"🔊 ElevenLabs TTS init: voice_id={voice_id!r}, model_id={model_id!r}, "
+            f"pipeline_sample_rate={TTS_SAMPLE_RATES['elevenlabs']}"
         )
 
         return ElevenLabsTTSService(
             api_key=api_key,
             voice_id=voice_id,
             model=model_id,
-            # Turn on internal service logging (supported by Pipecat)
             params=ElevenLabsTTSService.InputParams(enable_logging=True),
-        )
+        ), TTS_SAMPLE_RATES["elevenlabs"]
         
     # INWORLD (HTTP streaming)
     if provider == "inworld":
@@ -542,9 +551,9 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
             model=model_id,
             streaming=True,                  # uses /tts/v1/voice:stream
             encoding="LINEAR16",
-            sample_rate=48000,
+            sample_rate=TTS_SAMPLE_RATES["inworld"],
             params=params, 
-        )
+        ), TTS_SAMPLE_RATES["inworld"]
 
 
     # GOOGLE
@@ -572,7 +581,7 @@ def _build_tts_from_body(body: dict, aiohttp_session=None):
         return GoogleTTSService(
             voice_id=voice_id,
             params=GoogleTTSService.InputParams(language=lang_enum),
-        )
+        ), TTS_SAMPLE_RATES["google"]
         
     raise RuntimeError(f"Unknown TTS provider: {provider}")
 
@@ -808,6 +817,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         aiohttp_session = None
 
     # ✅ Make TTS selection loud + safe
+    tts_output_rate = 24000  # safe default
     try:
         logger.info(f"🔊 Requested TTS config: {json.dumps(body.get('tts'), ensure_ascii=False)}")
 
@@ -822,7 +832,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         if tts_provider == "elevenlabs":
             logger.info(f"🔑 ELEVENLABS_API_KEY present? {bool(os.getenv('ELEVENLABS_API_KEY'))}")
 
-        tts = _build_tts_from_body(body, aiohttp_session=aiohttp_session)
+        tts, tts_output_rate = _build_tts_from_body(body, aiohttp_session=aiohttp_session)
                 # 🔍 DIAGNOSTIC: prove which code + pipecat/inworld version this agent is actually running
         import inspect
         import pipecat
@@ -853,6 +863,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             api_key=os.getenv("CARTESIA_API_KEY"),
             voice_id=os.getenv("CARTESIA_VOICE_ID") or "71a7ad14-091c-4e8e-a314-022ece01c121",
         )
+        tts_output_rate = TTS_SAMPLE_RATES["cartesia"]
 
 
     # --- LLM MODEL SELECTION (strict, conversation-specific; no fallback) ---
@@ -1087,7 +1098,11 @@ You are simulating a real patient in a clinical consultation.
 
     task = PipelineTask(
         pipeline,
-        params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+        params=PipelineParams(
+            audio_out_sample_rate=tts_output_rate,
+            enable_metrics=True,
+            enable_usage_metrics=True,
+        ),
     )
 
     @transport.event_handler("on_client_connected")
@@ -1199,9 +1214,12 @@ You are simulating a real patient in a clinical consultation.
             )
             task = PipelineTask(
                 pipeline,
-                params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
+                params=PipelineParams(
+                    audio_out_sample_rate=tts_output_rate,
+                    enable_metrics=True,
+                    enable_usage_metrics=True,
+                ),
             )
-
             runner2 = PipelineRunner(handle_sigint=runner_args.handle_sigint)
             await runner2.run(task)
 
