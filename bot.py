@@ -47,7 +47,6 @@ from pipecat.services.elevenlabs.tts import ElevenLabsTTSService, ElevenLabsHttp
 from pipecat.services.google.tts import GoogleTTSService, Language
 from pipecat.services.inworld.tts import InworldHttpTTSService
 
-from fragment_guard import FragmentGuard
 
 from pipecat.transcriptions.language import Language as TranscriptLanguage
 
@@ -938,7 +937,7 @@ I am a real patient in a clinical consultation. Speak naturally and realisticall
 UNCLEAR SPEECH HANDLING (HARD):
 - Do not ask for repetition for clipped starts, fillers, hesitations,
   or obvious partial utterances (e.g. "Um", "And—", "Yeah, I—").
-  For these, wait rather than replying.
+  For these, respond with ONLY "Right" or "Okay" — nothing more.
   Do not say "Sorry, I didn't catch that."
 - If part of the clinician's meaning is clear, respond to the
   understood part. Only ask a brief targeted clarification if
@@ -1069,7 +1068,6 @@ You are simulating a real patient in a clinical consultation.
     ]
 
     context = LLMContext(messages)
-    fragment_guard = FragmentGuard(context)
 
     if use_flux_turns:
         user_turn_strategies = ExternalUserTurnStrategies()
@@ -1099,7 +1097,6 @@ You are simulating a real patient in a clinical consultation.
             transport.input(),
             stt,
             user_aggregator,
-            fragment_guard,
             llm,
             tts,
             transport.output(),
@@ -1217,7 +1214,6 @@ You are simulating a real patient in a clinical consultation.
                     transport.input(),
                     stt,
                     user_aggregator,
-                    fragment_guard,
                     llm,
                     tts,
                     transport.output(),
