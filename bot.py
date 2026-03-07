@@ -935,7 +935,15 @@ ROLE:
 I am a real patient in a clinical consultation. Speak naturally and realistically.
 
 UNCLEAR SPEECH HANDLING (HARD):
-- If I can’t parse what the clinician said, reply: "Sorry, I didn’t catch that — could you repeat it?"
+- Do not ask for repetition for clipped starts, fillers, hesitations,
+  or obvious partial utterances (e.g. "Um", "And—", "Yeah, I—").
+  For these, respond with ONLY "Right" or "Okay" — nothing more.
+  Do not say "Sorry, I didn't catch that."
+- If part of the clinician's meaning is clear, respond to the
+  understood part. Only ask a brief targeted clarification if
+  genuinely needed.
+- Only ask for full repetition when most of a LONGER utterance is
+  genuinely unintelligible.
 - Do not treat unclear speech as off-topic.
 
 STYLE RULES (HARD):
@@ -1066,7 +1074,7 @@ You are simulating a real patient in a clinical consultation.
     else:
         user_turn_strategies = UserTurnStrategies(
             start=[
-                MinWordsUserTurnStartStrategy(min_words=2),
+                MinWordsUserTurnStartStrategy(min_words=3),
             ],
             stop=[
                 TurnAnalyzerUserTurnStopStrategy(
@@ -1252,7 +1260,7 @@ async def bot(runner_args: RunnerArguments):
         return SileroVADAnalyzer(
             params=VADParams(
                 start_secs=0.35,
-                stop_secs=0.3,
+                stop_secs=0.8,
                 confidence=0.8,
                 min_volume=0.65,
                 vad_audio_passthrough=True,
