@@ -3,7 +3,7 @@ name: Build & Push (Docker Hub)
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ["**"]
 
 jobs:
   build:
@@ -19,6 +19,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Compute tag
+        id: vars
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          SAFE_BRANCH="${BRANCH//\//-}"
+          if [ "$SAFE_BRANCH" = "main" ]; then
+            TAG="main-${GITHUB_SHA}"
+          else
+            TAG="${SAFE_BRANCH}-${GITHUB_SHA}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
       - name: Build & Push (arm64)
         uses: docker/build-push-action@v6
         with:
@@ -27,5 +39,4 @@ jobs:
           platforms: linux/arm64
           provenance: false
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/voice-patient-bot:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/voice-patient-bot:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/voice-patient-bot:${{ steps.vars.outputs.tag }}
