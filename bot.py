@@ -737,9 +737,12 @@ def _build_stt_service(provider: str):
             connection_params=AssemblyAIConnectionParams(
                 sample_rate=16000,
                 formatted_finals=True,
+                speech_model="u3-rt-pro",
+                end_of_turn_confidence_threshold=float(os.getenv("AAI_EOT_CONFIDENCE_THRESHOLD", "0.7")),
+                min_end_of_turn_silence_when_confident=int(os.getenv("AAI_EOT_MIN_SILENCE_MS", "160")),
+                max_turn_silence=int(os.getenv("AAI_EOT_MAX_TURN_SILENCE_MS", "2400")),
             ),
-            # Keep your existing SmartTurn + Silero VAD as the turn controller:
-            vad_force_turn_endpoint=True,
+            vad_force_turn_endpoint=False,
         )
 
     raise RuntimeError(f"Unknown STT provider: {provider!r}")
@@ -800,7 +803,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     )
 
     stt, stt_provider_in_use, stt_other = choose_stt_primary_first(mode)
-    use_flux_turns = stt_provider_in_use in ("deepgram", "dg")
+    use_flux_turns = stt_provider_in_use in ("deepgram", "dg", "assemblyai", "aai")
     logger.info(f"🎙️ STT selected: {stt_provider_in_use} (secondary={stt_other or 'none'})")
 
     # Ensure Google credentials exist before any Google client init
@@ -1254,7 +1257,7 @@ async def bot(runner_args: RunnerArguments):
     )
 
     primary_provider, _secondary_provider = _get_primary_secondary_for_mode(mode)
-    use_flux = primary_provider in ("deepgram", "dg")
+    use_flux = primary_provider in ("deepgram", "dg", "assemblyai", "aai")
 
     def _silero_vad():
         return SileroVADAnalyzer(
