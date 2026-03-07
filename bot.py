@@ -743,6 +743,7 @@ def _build_stt_service(provider: str):
                 max_turn_silence=int(os.getenv("AAI_EOT_MAX_TURN_SILENCE_MS", "2400")),
             ),
             vad_force_turn_endpoint=False,
+            should_interrupt=False,  # ← Silero/Daily handles interruptions, not AAI
         )
 
     raise RuntimeError(f"Unknown STT provider: {provider!r}")
