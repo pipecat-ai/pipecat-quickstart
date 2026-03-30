@@ -1,3 +1,6 @@
+> [!WARNING]
+> This is ARCHIVED. Instead of cloning this repo, download the [Pipecat CLI](https://github.com/pipecat-ai/pipecat-cli) with `uv tool install pipecat-ai-cli` and run `pipecat init quickstart`.
+
 # Pipecat Quickstart
 
 Build and deploy your first voice AI bot in under 10 minutes. Develop locally, then scale to production on Pipecat Cloud.
